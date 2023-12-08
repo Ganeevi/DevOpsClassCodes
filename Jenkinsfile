@@ -42,11 +42,11 @@ pipeline {
                 sh 'sudo systemctl enable docker'
             }
         }
-        /*stage ('Deploy') {
+        stage ('Deploy') {
             //agent any
             steps {
                 sh 'sudo sh docker_inst.sh'
             }
-        }*/
+        }
     }
 }
