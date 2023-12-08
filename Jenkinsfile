@@ -1,55 +1,52 @@
-#!/usr/bin/env groovy
-def gv
 pipeline {
-    agent none
-
     tools {
-        // Install the Maven version configured as "M3" and add it to the path.
-        jdk 'myjava'
-        maven 'mymaven'
+        maven 'myMVN'
+        jdk 'myJDK'
     }
-
+    agent {label 'Mumbai-Jenkins-Slave' }
     stages {
-        stage('Compile') {
-            agent any
+        stage ('Checkout') {
+            //agent any
             steps {
-                script{
-                    git 'https://github.com/devops-trainer/DevOpsClassCodes.git'
-                   gv = load "script.groovy"
-                    gv.compile()
-                }
-                
+                git 'https://github.com/Ganeevi/DevOpsClassCodes.git'
             }
         }
-        stage('UnitTest') {
-           
-            agent any
+        stage ('Compile') {
+            //agent any
             steps {
-               script{
-                  gv = load "script.groovy"
-                   gv.UnitTest()
-               }
-                
-            }
-           
+                sh 'mvn compile'
+            }    
         }
-        stage('Package') {
-            agent any
+        stage ('Code_Review') {
+            //agent any
             steps {
-                script{
-                      gv = load "script.groovy"
-                    gv.package()
-                }
-                
+                sh 'mvn pmd:pmd'
             }
-         
         }
-        stage('Build docker image'){
-            agent any
-            steps{
-                script{
-                    
+        stage ('Unit_Test') {
+            //agent any
+            steps {
+                sh 'mvn test'
+            }
+        }
+        stage ('Package') {
+            //agent any
+            steps {
+                sh 'mvn package'
+            }
+        }
+        stage ('Docker_Installation') {
+            steps {
+                sh 'sudo yum install -y docker'
+                sh 'sudo systemctl start docker'
+                sh 'sudo systemctl enable docker'
+            }
+        }
+        /*stage ('Deploy') {
+            //agent any
+            steps {
+                sh 'sudo sh docker_container.sh'
+            }
+        }*/
     }
 }
-        }
-    }
