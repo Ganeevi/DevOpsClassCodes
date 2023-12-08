@@ -45,7 +45,7 @@ pipeline {
         /*stage ('Deploy') {
             //agent any
             steps {
-                sh 'sudo sh docker_container.sh'
+                sh 'sudo sh docker_inst.sh'
             }
         }*/
     }
