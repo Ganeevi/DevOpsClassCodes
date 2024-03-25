@@ -50,7 +50,7 @@ pipeline {
     }
     post{
         success{
-            sh 'echo "pipeline successful"'
+            sh 'echo "pipeline executed successful"'
         }
         failure{
             sh 'echo "Pipeline failed"'
