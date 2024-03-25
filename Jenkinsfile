@@ -46,11 +46,6 @@ pipeline {
             steps {
                 sh 'mvn package'
             }
-		post {
-			success {
-					sh 'echo "Webhooks Added"'
-			}
-		}
         }
     }
     post{
