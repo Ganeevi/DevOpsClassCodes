@@ -11,7 +11,6 @@ pipeline{
         DOCKER_IMAGE_TAG = 'latest'
         ECR_REPOSITORY_NAME = '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}'
     }
-    
     stages {
       stage ('Compile') {
             steps {
