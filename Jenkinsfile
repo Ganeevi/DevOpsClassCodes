@@ -1,37 +1,30 @@
-pipeline {
-    agent any
+pipeline{
+    agent { label 'mySlave' }
     tools {
-        jdk 'myJDK'
         maven 'myMVN'
+        jdk 'myJDK'
     }
-	parameters {
-         string(defaultValue: '', description: 'branch name for deploying specific vendor release version, master is latest production', name: 'branch_name')
-         booleanParam(defaultValue: false, description: 'tick this to use rundeck deployment, release via PTP must use this', name: 'bool_release_build')         
-         booleanParam(defaultValue: false, description: 'tick this to upload insideTrack files ONLY, director build will be skipped', name: 'bool_insideTrack_only')
-         string(defaultValue: '9.8.3', description: 'previous director version', name: 'previous_director_version')
-         string(defaultValue: '9.8.3', description: 'director version', name: 'director_version')
-         string(defaultValue: '',  description: 'config version', name: 'config_version')
-         string(defaultValue: '',  description: 'deployment ENVs, support multiple ones, use / to split e.g. DEV1/DEV2', name: 'deployment_environment')
-         string(defaultValue: '',  description: 'config version', name: 'config_version')
-         booleanParam(defaultValue: false, description: 'upload files to Artifactory - if choose this option, it will not do deployment but only do file upload to artifactory', name: 'bool_artifactory')
-         string(defaultValue: 'generic-release/com/scb/orcid/orcid-server-9.8.3.zip',  description: 'the file path for uploading from Artifactory generic-temp to generic-release/maven-releases etc, please ensure the filename in the end (it does NOT support folder upload), used by above bool_artifactory option only)', name: 'file_path')
-     }
+    environment {
+		AWS_ACCOUNT_ID = '533267022876'
+        AWS_DEFAULT_REGION = 'ap-south-1'
+        IMAGE_REPO_NAME="ramandeep"
+        DOCKER_IMAGE_TAG = 'latest'
+        ECR_REPOSITORY_NAME = '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}'
+    }
+    
     stages {
-        stage('Compile'){
-            agent any
+      stage ('Compile') {
             steps {
-                git 'https://github.com/devops-trainer/DevOpsClassCodes.git'
-                branch 'master'
+                git branch: 'master',
+                url: 'https://github.com/Ganeevi/DevOpsClassCodes.git'
             }
         }
-        stage('CodeReview'){
-            agent any
-            steps{
+        stage('Code-Review') {
+            steps {
                 sh 'mvn pmd:pmd'
             }
         }
-        stage('UnitTest') {
-            agent any
+        stage('Unit-Test') {
             steps {
                 sh 'mvn test'
             }
@@ -41,19 +34,53 @@ pipeline {
                 }
             }
         }
-        stage ('Package') {
-            agent any
+        stage('Package') {
             steps {
                 sh 'mvn package'
             }
+            post {
+                success {
+                    sh 'sudo yum install -y docker; sudo systemctl start docker; sudo systemctl enable docker'
+                }
+            }
         }
+        stage('Deploy') {
+            steps {
+                sh 'sudo sh deploy.sh'
+            }
+            post {
+                success {
+                    sh 'cd /docker-file'
+                    sh 'sudo docker build -t docker:$BUILD_NUMBER .'
+                    sh 'sudo docker run -itd -P docker:$BUILD_NUMBER'
+                }
+                failure {
+                    sh 'echo "Failure in jenkins pipeline"'
+                }
+            }
+        }
+		stage('Login to ECR') {
+            steps {
+                script {
+                    sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"                }
+            }
+        }
+		stage('Pushing to ECR') {
+			steps{  
+				script {
+					sh "docker tag docker:$BUILD_NUMBER ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$BUILD_NUMBER"
+					sh "docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$BUILD_NUMBER"
+         }
+        }
+      }
     }
-    post{
-        success{
-            sh 'echo "pipeline executed successful"'
+    post {
+        success {
+            sh 'echo "Congratulations! Deployment Successful"'
+            sh 'sudo docker images; sudo docker ps -a'
         }
-        failure{
-            sh 'echo "Pipeline failed"'
+        failure {
+            sh 'echo "Failure in execution, validate"'
         }
     }
 }
