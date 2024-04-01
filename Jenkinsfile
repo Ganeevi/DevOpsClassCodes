@@ -5,7 +5,7 @@ pipeline{
         jdk 'myJDK'
     }
     environment {
-	AWS_ACCOUNT_ID = '533267022876'
+        AWS_ACCOUNT_ID = '533267022876'
         AWS_DEFAULT_REGION = 'ap-south-1'
         IMAGE_REPO_NAME = "ramandeep"
         DOCKER_IMAGE_TAG = 'latest'
@@ -36,6 +36,7 @@ pipeline{
         stage('Package') {
             steps {
                 sh 'mvn package'
+                sh 'ls -l /tmp/workspace/pipeline-as-code/target/addressbook.war'
             }
             post {
                 success {
@@ -45,11 +46,10 @@ pipeline{
         }
         stage('Deploy') {
             steps {
-                sh 'sudo sh deploy.sh'
+                sh 'sudo cp -pr /tmp/workspace/pipeline-as-code/target/addressbook.war .'
             }
             post {
                 success {
-                    sh 'cd /docker-file'
                     sh 'sudo docker build -t docker:$BUILD_NUMBER .'
                     sh 'sudo docker run -itd -P docker:$BUILD_NUMBER'
                 }
@@ -72,7 +72,7 @@ pipeline{
                     sh "docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$BUILD_NUMBER"
                 }
             }
-      	}
+        }
     }
     post {
         success {
