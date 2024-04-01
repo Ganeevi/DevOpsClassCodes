@@ -1,5 +1,5 @@
 #!/bin/bash
-sudo rm -rf docker-file
+sudo rm -rf /docker-file
 ls -l /docker-file/
 sudo mkdir /docker-file
 cd /docker-file
