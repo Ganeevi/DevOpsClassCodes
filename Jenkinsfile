@@ -1,5 +1,5 @@
 pipeline{
-    agent { label 'mySlave' }
+    agent { label 'dev' }
     tools {
         maven 'myMVN'
         jdk 'myJDK'
@@ -7,15 +7,21 @@ pipeline{
     environment {
         AWS_ACCOUNT_ID = '533267022876'
         AWS_DEFAULT_REGION = 'ap-south-1'
-        IMAGE_REPO_NAME = "ramandeep"
-        DOCKER_IMAGE_TAG = 'latest'
-        ECR_REPOSITORY_NAME = '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}'
-    }
+        DOCKER_IMAGE_NAME = '$JOB_NAME'
+		DOCKER_IMAGE_TAG = '$BUILD_NUMBER'
+        ECR_REPOSITORY_NAME = '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com'
+		}
+		
     stages {
         stage ('Compile') {
             steps {
                 git branch: 'master',
                 url: 'https://github.com/Ganeevi/DevOpsClassCodes.git'
+            }
+        }
+		stage('Build') {
+            steps {
+                sh 'mvn clean install'
             }
         }
         stage('Code-Review') {
@@ -36,7 +42,7 @@ pipeline{
         stage('Package') {
             steps {
                 sh 'mvn package'
-                sh 'ls -l /tmp/workspace/pipeline-as-code/target/addressbook.war'
+                sh 'ls -l /tmp/workspace/${JOB_NAME}/target/addressbook.war'
             }
             post {
                 success {
@@ -44,43 +50,66 @@ pipeline{
                 }
             }
         }
-        stage('Deploy') {
+        stage('Build and Deploy to "DEV" environment') {
             steps {
-                sh 'sudo cp -pr /tmp/workspace/pipeline-as-code/target/addressbook.war .'
+				sh 'sudo chmod 666 /var/run/docker.sock'
+				sh 'cd /tmp/workspace/${JOB_NAME}; pwd; sudo cp -pr target/addressbook.war .; ls -l /tmp/workspace/${JOB_NAME}/addressbook.war'
+				sh "docker build -t ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ."
+				sh "sudo docker run -itd -P ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+				
             }
             post {
                 success {
-                    sh 'sudo docker build -t docker:$BUILD_NUMBER .'
-                    sh 'sudo docker run -itd -P docker:$BUILD_NUMBER'
+                    sh 'echo "********** Stage Successful **********"'
                 }
                 failure {
-                    sh 'echo "Failure in jenkins pipeline"'
+                    sh 'echo "********** Stage Failed, Validate **********"'
                 }
             }
         }
-        stage('Login to ECR') {
+		stage('Creating ECR Repository') {
             steps {
                 script {
                     sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+					// sh " *********************************** Need to work on Repository creation ***********************************"
+					//sh "echo 'Creating new if now already exist'"
+					//sh "aws ecr create-repository --repository-name ${JOB_NAME} --region ${AWS_DEFAULT_REGION}"
                 }
             }
         }
-        stage('Pushing to ECR') {
-            steps{
+        stage('Pushing to ECR from Dev') {
+            steps {
                 script {
-                    sh "docker tag docker:$BUILD_NUMBER ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$BUILD_NUMBER"
-                    sh "docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:$BUILD_NUMBER"
+                    sh "docker push ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+				}
+            }
+        }
+		stage('Deploy to "STAGE" environment') {
+			agent { label 'stage' }
+            steps {
+                script {
+					sh 'sudo chmod 666 /var/run/docker.sock'
+                    sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+                    sh "docker pull ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+					sh "docker run -itd -P ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
                 }
             }
         }
-    }
+	}
     post {
-        success {
+		success {
             sh 'echo "Congratulations! Deployment Successful"'
             sh 'sudo docker images; sudo docker ps -a'
         }
+        always {
+            // Cleanup tasks, finalization steps, etc., <<< if required >>>
+            //sh 'docker stop $(docker ps -a -q)|| true'
+            //sh 'docker rm $(docker ps -a -q) || true'
+			//sh 'docker rmi -f $(docker images -a -q)|| true 
+        }
+		
         failure {
             sh 'echo "Failure in execution, validate"'
-        }
-    }
+		}
+	}
 }
