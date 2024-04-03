@@ -101,13 +101,12 @@ pipeline{
             sh 'echo "Congratulations! Deployment Successful"'
             sh 'sudo docker images; sudo docker ps -a'
         }
-        always {
+        /*always {
             // Cleanup tasks, finalization steps, etc., <<< if required >>>
-            //sh 'docker stop $(docker ps -a -q)|| true'
-            //sh 'docker rm $(docker ps -a -q) || true'
-			//sh 'docker rmi -f $(docker images -a -q)|| true 
-        }
-		
+            sh 'docker stop $(docker ps -a -q)|| true'
+            sh 'docker rm $(docker ps -a -q) || true'
+			sh 'docker rmi -f $(docker images -a -q)|| true' 
+        }*/
         failure {
             sh 'echo "Failure in execution, validate"'
 		}
