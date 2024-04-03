@@ -10,8 +10,7 @@ pipeline{
         DOCKER_IMAGE_NAME = '$JOB_NAME'
 		DOCKER_IMAGE_TAG = '$BUILD_NUMBER'
         ECR_REPOSITORY_NAME = '${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com'
-		}
-		
+	}
     stages {
         stage ('Compile') {
             steps {
@@ -67,13 +66,18 @@ pipeline{
                 }
             }
         }
-		stage('Creating ECR Repository') {
+        stage('Check Repository Existence') {
             steps {
                 script {
-                    sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
-					// sh " *********************************** Need to work on Repository creation ***********************************"
-					//sh "echo 'Creating new if now already exist'"
-					//sh "aws ecr create-repository --repository-name ${JOB_NAME} --region ${AWS_DEFAULT_REGION}"
+                    def repositoryName = '${DOCKER_IMAGE_NAME}'
+                    def repositoryExists = sh(script: "aws ecr describe-repositories --repository-names ${DOCKER_IMAGE_NAME} --region ${AWS_DEFAULT_REGION}", returnStatus: true) == 0
+                    if (!repositoryExists) {
+						 sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+                        echo "Repository does not exist. Creating repository..."
+                        sh "aws ecr create-repository --repository-name ${DOCKER_IMAGE_NAME} --region ${AWS_DEFAULT_REGION}"
+                    } else {
+                        echo "Repository already exists. Skipping creation."
+                    }
                 }
             }
         }
@@ -89,7 +93,7 @@ pipeline{
             steps {
                 script {
 					sh 'sudo chmod 666 /var/run/docker.sock'
-                    sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+                    // sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
                     sh "docker pull ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
 					sh "docker run -itd -P ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
                 }
@@ -101,7 +105,7 @@ pipeline{
             sh 'echo "Congratulations! Deployment Successful"'
             sh 'sudo docker images; sudo docker ps -a'
         }
-        /*always {
+        /* always {
             // Cleanup tasks, finalization steps, etc., <<< if required >>>
             sh 'docker stop $(docker ps -a -q)|| true'
             sh 'docker rm $(docker ps -a -q) || true'
