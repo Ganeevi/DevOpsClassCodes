@@ -1,8 +1,9 @@
 pipeline{
-    agent { label 'dev' }
+    agent { label 'artifactory-slave' }
     tools {
         maven 'myMVN'
         jdk 'myJDK'
+        // dockerTool 'myDOCKER'
     }
     environment {
         AWS_ACCOUNT_ID = '533267022876'
@@ -43,13 +44,53 @@ pipeline{
                 sh 'mvn package'
                 sh 'ls -l /tmp/workspace/${JOB_NAME}/target/addressbook.war'
             }
-            post {
-                success {
-                    sh 'sudo yum install -y docker; sudo systemctl start docker; sudo systemctl enable docker'
-                }
-            }
         }
-        stage('Build and Deploy to "DEV" environment') {
+// =============================================== Upload Jfrog Artifact ===============================================		
+		stage('Upload Jfrog Artifact') {
+            steps {
+				dir('/tmp/workspace/artifactory-pipeline/target'){
+					rtServer (
+						id: 'jfrog-artifactory',
+						url: 'http://3.110.55.229:8082/artifactory',
+						credentialsId: 'jfrog-login',
+						bypassProxy: true,
+					)
+					rtUpload (
+						serverId: 'jfrog-artifactory',
+						spec: '''{
+							"files": [
+							{
+									"pattern": "addressbook.war",
+									"target": "libs-snapshot-local"
+								}
+							]
+						}''',
+					)
+				}
+			}
+		}
+		
+// =============================================== Download Jfrog Artifact ===============================================
+		
+		stage('Download Jfrog Artifact') {
+			steps {
+				dir('/tmp'){
+					rtDownload (
+						serverId: 'jfrog-artifactory',
+						spec: '''{
+							"files": [
+							{
+								"pattern": "libs-snapshot-local/",
+								"target": ""
+								}
+							]
+						}''',
+					)
+				}
+			}
+		}
+// =============================================== Build and Deploy to "DEV" ===============================================		
+		stage('Build and Deploy to "DEV" environment') {
             steps {
 				sh 'sudo chmod 666 /var/run/docker.sock'
 				sh 'cd /tmp/workspace/${JOB_NAME}; pwd; sudo cp -pr target/addressbook.war .; ls -l /tmp/workspace/${JOB_NAME}/addressbook.war'
@@ -66,6 +107,8 @@ pipeline{
                 }
             }
         }
+		
+// =============================================== Creating Repository on ECR ===============================================
         stage('Check Repository Existence') {
             steps {
                 script {
@@ -81,6 +124,7 @@ pipeline{
                 }
             }
         }
+// =============================================== Pushing Docker image on ECR ===============================================
         stage('Pushing to ECR from Dev') {
             steps {
                 script {
@@ -88,7 +132,8 @@ pipeline{
 				}
             }
         }
-		stage('Deploy to "STAGE" environment') {
+// =============================================== Depolying to another environment ===============================================
+		/*stage('Deploy to "STAGE" environment') {
 			agent { label 'stage' }
             steps {
                 script {
@@ -98,14 +143,14 @@ pipeline{
 					sh "docker run -itd -P ${ECR_REPOSITORY_NAME}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
                 }
             }
-        }
+        }*/
 	}
     post {
 		success {
             sh 'echo "Congratulations! Deployment Successful"'
             sh 'sudo docker images; sudo docker ps -a'
         }
-        /* always {
+        /*always {
             // Cleanup tasks, finalization steps, etc., <<< if required >>>
             sh 'docker stop $(docker ps -a -q)|| true'
             sh 'docker rm $(docker ps -a -q) || true'
