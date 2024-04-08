@@ -1,31 +1,33 @@
 // Issues to be fixed: install JFROG on Amazon Linux 2 rather than ubuntu, as different java - jdk versions gives issues.
 
 pipeline {
-    agent { label 'docker-jfrog' }
-	/* Steps:
-		1. Install 1 Jenkins Master (Packages: Java-JDK, Git, jenkins)
-		2. Install 1 Ubuntu Jfrog server (Packages: JDK, GIT, docker, jfrog)
-		3. Install 2 Jenkins Slaves (Packages: Java-JDK, docker, git)
-		4. Open ssh connection between all
-		5. Assign a role for access to ECR.
-				1. Jenkins Master will execute all the jobs on Ubuntu server
-				2. Ubuntu agent tasks will be executing MVN goles, build dockerimage from dockerfile and upload the image on ECR,  and uploading the artifacts to the jfrog artifactory.
-				3. Once image is created, it will be pulled from the artifactory and containers will be created on Jenkins Slaves.
-	*/
+    agent { 
+		label 'artifactory' 
+		}
     tools {
-        jdk 'myJDK'         // JDK "JAVA_HOME" defination of "ubuntu server in Jenkins tools"
+        jdk 'myJDK'
         maven 'myMVN'
     }
     environment {
         ACCOUNT_ID = "533267022876"
 		DEFAULT_REGION = "ap-south-1"
-		DOCKER_IMAGE = "${JOB_NAME}"
+		IMAGE_NAME = "${JOB_NAME}"
 		IMAGE_TAG = "${BUILD_NUMBER}"
     }
     stages {
+		stage('Prepare'){
+            steps {
+                sh 'sudo yum install -y git'
+            }
+        }
         stage('Checkout'){
             steps {
                 git 'https://github.com/Ganeevi/DevOpsClassCodes.git'
+            }
+        }
+		stage('Build'){
+            steps {
+                sh 'mvn clean install'
             }
         }
         stage('Code-Review'){
@@ -52,14 +54,15 @@ pipeline {
             }
             post {
                 success {
-                    sh 'cd /tmp/workspace/${JOB_NAME}/; cp -pr target/addressbook.war .'
-                    sh 'ls -l /tmp/workspace/${JOB_NAME}/'
-                    //sh 'sudo yum install -y docker; sudo systemctl start docker; sudo systemctl enable docker'
+                    sh 'echo "Docker Package installation"'
+				    sh 'sudo yum install -y docker'
+				    sh 'sudo systemctl enable docker'
+				    sh 'sudo systemctl start docker'
                 }
             }
         }
-// =============================================== Jfrog Artifact ===============================================
-		/*stage('Upload Jfrog Artifact') {
+/* =============================================== Jfrog Artifact ===============================================
+		stage('Upload Jfrog Artifact') {
             steps {
 				sh 'cd /tmp/workspace/${JOB_NAME}/target/' {
 					rtServer (
@@ -98,13 +101,15 @@ pipeline {
 					)
 				}
 			}
-		}*/
-// =============================================== Jfrog Artifact ===============================================
-		stage('Creating dockerimage from dockerfile'){
+		}
+==============================================================================================================*/
+
+		stage('Build dockerimage'){
             steps {
+				sh 'cp -pr /tmp/workspace/${IMAGE_NAME}/target/addressbook.war /tmp/workspace/${IMAGE_NAME}/'
 				sh 'sudo chmod 666 /var/run/docker.sock'
                 sh' aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com'
-                sh 'docker build -t ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${DOCKER_IMAGE}:${IMAGE_TAG} .'
+                sh 'docker build -t ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}:${IMAGE_TAG} .'
                 }
 				post {
 					success {
@@ -118,12 +123,12 @@ pipeline {
         stage('Check Repository Existence') {
             steps {
                 script {
-                    def repositoryName = '${DOCKER_IMAGE}'
-                    def repositoryExists = sh(script: "aws ecr describe-repositories --repository-names ${DOCKER_IMAGE} --region ${DEFAULT_REGION}", returnStatus: true) == 0
+                    def repositoryName = '${IMAGE_NAME}'
+                    def repositoryExists = sh(script: "aws ecr describe-repositories --repository-names ${IMAGE_NAME} --region ${DEFAULT_REGION}", returnStatus: true) == 0
                     if (!repositoryExists) {
 						 sh "aws ecr get-login-password --region ${DEFAULT_REGION} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com"
                         echo "Repository does not exist. Creating repository..."
-                        sh "aws ecr create-repository --repository-name ${DOCKER_IMAGE} --region ${DEFAULT_REGION}"
+                        sh "aws ecr create-repository --repository-name ${IMAGE_NAME} --region ${DEFAULT_REGION}"
                     } else {
                         echo "Repository already exists. Skipping creation."
                     }
@@ -132,12 +137,12 @@ pipeline {
         }
         stage('Pushing image to ECR Repository') {
             steps {
-                //sh 'aws ecr create-repository --repository-name ${DOCKER_IMAGE} --region ${DEFAULT_REGION}'
-                sh 'docker push ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${DOCKER_IMAGE}:${IMAGE_TAG}'
+                //sh 'aws ecr create-repository --repository-name ${IMAGE_NAME} --region ${DEFAULT_REGION}'
+                sh 'docker push ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}:${IMAGE_TAG}'
                }
                post {
                    success {
-                       sh "echo 'Docker image pushed to ECR. Created Repository - ${DOCKER_IMAGE} successfully'"
+                       sh "echo 'Docker image pushed to ECR. Created Repository - ${IMAGE_NAME} successfully'"
                    }
                    failure {
                        sh 'echo "Pushing Image to ECR failed"'
@@ -150,8 +155,8 @@ pipeline {
                 sh 'sudo yum install -y docker; sudo systemctl start docker; sudo systemctl enable docker'
                 sh 'sudo chmod 666 /var/run/docker.sock'
                 sh "aws ecr get-login-password --region ${DEFAULT_REGION} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com"
-                sh 'docker pull ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${DOCKER_IMAGE}:${IMAGE_TAG}'
-                sh 'docker run -itd ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${DOCKER_IMAGE}:${IMAGE_TAG}'
+                sh 'docker pull ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}:${IMAGE_TAG}'
+                sh 'docker run -itd ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}:${IMAGE_TAG}'
             }
         }
         stage('Deploy to "STAGE" environment'){
@@ -160,8 +165,8 @@ pipeline {
                 sh 'sudo yum install -y docker; sudo systemctl start docker; sudo systemctl enable docker'
                 sh 'sudo chmod 666 /var/run/docker.sock'
                 sh "aws ecr get-login-password --region ${DEFAULT_REGION} | docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com"
-                sh 'docker pull ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${DOCKER_IMAGE}:${IMAGE_TAG}'
-                sh 'docker run -itd ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${DOCKER_IMAGE}:${IMAGE_TAG}'
+                sh 'docker pull ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}:${IMAGE_TAG}'
+                sh 'docker run -itd ${ACCOUNT_ID}.dkr.ecr.${DEFAULT_REGION}.amazonaws.com/${IMAGE_NAME}:${IMAGE_TAG}'
             }
         }
     }
